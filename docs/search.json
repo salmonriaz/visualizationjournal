@@ -1,0 +1,37 @@
+[
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Visualization Journal",
+    "section": "",
+    "text": "This site is my course notebook for CSC 477 / GCSC 577. It contains weekly notes, small experiments, and visualizations created throughout the semester."
+  },
+  {
+    "objectID": "index.html#about",
+    "href": "index.html#about",
+    "title": "Visualization Journal",
+    "section": "",
+    "text": "This site is my course notebook for CSC 477 / GCSC 577. It contains weekly notes, small experiments, and visualizations created throughout the semester."
+  },
+  {
+    "objectID": "index.html#week-1",
+    "href": "index.html#week-1",
+    "title": "Visualization Journal",
+    "section": "2 Week 1",
+    "text": "2 Week 1\n\n2.1 Notes\n\n\n\n\n\n2.2 Visualization\nlibrary(ggplot2)\n\nggplot(mtcars, aes(x = mpg, y = hp)) +\n  geom_point() +\n  labs(\n    title = \"Horsepower vs. MPG\",\n    x = \"Miles per gallon (mpg)\",\n    y = \"Horsepower (hp)\"\n  )\n\n\n2.3 Quick reflection\n\nWhat stands out:\nWhat I want to explore next:"
+  },
+  {
+    "objectID": "index.html#week-2",
+    "href": "index.html#week-2",
+    "title": "Visualization Journal",
+    "section": "3 Week 2",
+    "text": "3 Week 2\n\n3.1 Notes\n\n\n\n\n\n3.2 Visualization\n\n\nShow code\nimport pandas as pd\nimport matplotlib.pyplot as plt\n\ndf = pd.DataFrame({\n    \"x\": [1, 2, 3, 4, 5],\n    \"y\": [2, 1, 3, 5, 4],\n})\n\nplt.figure()\nplt.plot(df[\"x\"], df[\"y\"], marker=\"o\")\nplt.title(\"Simple Line Plot\")\nplt.xlabel(\"x\")\nplt.ylabel(\"y\")\nplt.show()\n\n\n\n\n\n\n\n\n\n\n\n3.3 Quick reflection\n\nWhat stands out:\nWhat I want to explore next:"
+  },
+  {
+    "objectID": "index.html#week-3",
+    "href": "index.html#week-3",
+    "title": "Visualization Journal",
+    "section": "4 Week 3",
+    "text": "4 Week 3\n\n4.1 Notes\n\n\n\n\n\n4.2 Visualization\nlibrary(dplyr)\nlibrary(ggplot2)\n\nsummary_tbl &lt;- mtcars %&gt;%\n  group_by(cyl) %&gt;%\n  summarize(\n    avg_mpg = mean(mpg),\n    n = n(),\n    .groups = \"drop\"\n  )\n\nggplot(summary_tbl, aes(x = factor(cyl), y = avg_mpg)) +\n  geom_col() +\n  labs(\n    title = \"Average MPG by Cylinder Count\",\n    x = \"Cylinders\",\n    y = \"Average MPG\"\n  )\n\n\n4.3 Quick reflection\n\nWhat stands out:\nWhat I want to explore next:"
+  }
+]
