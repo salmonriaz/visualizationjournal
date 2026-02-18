@@ -1,20 +1,78 @@
+# ==============================================
+# FILE: _quarto.yml
+# PROJECT: Visualization Journal (CSC 477 / GCSC 577)
+# AUTHOR: Salmon Riaz
+# VERSION: 1.0.0
+# DATE: 2026-02-18
+# CHANGE: Initial website structure aligned to class "Course Notebook" layout (Week 01 ready).
+#
+# PURPOSE
+# - Creates a Quarto WEBSITE with a left sidebar like the common class template
+# - Builds to /docs (GitHub Pages friendly)
+# - Adds navigation sections: Home, Weeks, Labs, Group Work
+#
+# NOTES
+# - Week 01 includes R-only chunks (matches the common Week 01 template style).
+# - When you later mix R + Python in the same .qmd, you must use reticulate::use_python()
+#   at the top of that specific file (knitr/reticulate behavior).
+# ==============================================
+
 project:
   type: website
   output-dir: docs
 
 website:
-  title: "Visualization Journal"
-  navbar:
-    left:
+  title: "Course Notebook of Visualizations — Salmon Riaz"
+  sidebar:
+    style: "docked"
+    search: true
+    contents:
       - href: index.qmd
         text: Home
+
+      - section: Weeks
+        contents:
+          - href: week-01.qmd
+            text: "Week 01 — Getting Started"
+          - href: week-02.qmd
+            text: "Week 02 — Excel Visualizations"
+          - href: week-03.qmd
+            text: "Week 03 — Pivot Tables in Excel"
+          - href: week-04.qmd
+            text: "Week 04 — Tableau Public"
+          - href: week-05.qmd
+            text: "Week 05 — Tableau Public (continued)"
+          - href: week-06.qmd
+            text: "Week 06 — (placeholder)"
+          - href: week-07.qmd
+            text: "Week 07 — (placeholder)"
+          - href: week-08.qmd
+            text: "Week 08 — (placeholder)"
+          - href: week-09.qmd
+            text: "Week 09 — (placeholder)"
+
+      - section: Labs
+        contents:
+          - href: lab-06.qmd
+            text: "Lab 6 — (placeholder)"
+
+      - section: Group Work
+        contents:
+          - href: group-weekly-plan.qmd
+            text: "Weekly Plan — (placeholder)"
+          - href: group-week-04.qmd
+            text: "Week 04 — Initial Exploration (placeholder)"
 
 format:
   html:
     toc: true
-    number-sections: true
+    toc-location: right
+    number-sections: false
     code-fold: true
-    code-summary: "Show code"
+    code-summary: "Code"
+    code-copy: true
+    theme: cosmo
+
 execute:
   echo: true
   warning: false

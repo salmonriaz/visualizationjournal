@@ -1,0 +1,15 @@
+---
+title: "Week 04 — Initial Exploration (placeholder)"
+format:
+  html:
+    toc: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Notes
+
+
+> Placeholder page. We’ll fill this in when we catch up to this week.

@@ -1,0 +1,31 @@
+---
+title: "Week 01 — Getting Started"
+format:
+  html:
+    toc: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Goals
+
+- Learn the workflow
+- Run some R code
+
+## Notes
+
+This week is mostly about getting the tooling and publishing flow working cleanly.
+My focus: keep the notebook consistent, readable, and easy to build/publish.
+
+## R work
+
+```{r}
+x <- rnorm(100)
+mean(x)
+```
+
+```{r}
+hist(x)
+```

@@ -1,0 +1,14 @@
+---
+title: "Week 07 — (placeholder)"
+format:
+  html:
+    toc: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+
+
+> Placeholder page. We’ll fill this in when we catch up to this week.

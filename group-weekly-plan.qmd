@@ -1,0 +1,15 @@
+---
+title: "Weekly Plan — (placeholder)"
+format:
+  html:
+    toc: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Plan
+
+
+> Placeholder page. We’ll fill this in when we catch up to this week.

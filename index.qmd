@@ -1,108 +1,23 @@
 ---
 title: "Visualization Journal"
-subtitle: "CSC 477 / GCSC 577"
+subtitle: "CSC 477 / GCSC 577 — Spring 2026"
 format:
   html:
     toc: true
-    number-sections: true
-    code-fold: true
-    code-summary: "Show code"
+    number-sections: false
 execute:
   echo: true
   warning: false
   message: false
-jupyter: python3
 ---
 
-## About
+## Welcome
 
-This site is my course notebook for CSC 477 / GCSC 577. It contains weekly notes, small experiments, and visualizations created throughout the semester.
+This site is my course notebook for **CSC 477 / GCSC 577 (Visualizations)**.
+It contains weekly notes, small experiments, and visualizations created throughout the semester.
 
-## Week 1
+### How to use this notebook
 
-### Notes
-
-- 
-
-### Visualization
-
-```{r}
-library(ggplot2)
-
-ggplot(mtcars, aes(x = mpg, y = hp)) +
-  geom_point() +
-  labs(
-    title = "Horsepower vs. MPG",
-    x = "Miles per gallon (mpg)",
-    y = "Horsepower (hp)"
-  )
-```
-
-### Quick reflection
-
-- What stands out:
-- What I want to explore next:
-
-## Week 2
-
-### Notes
-
-- 
-
-### Visualization
-
-```{python}
-import pandas as pd
-import matplotlib.pyplot as plt
-
-df = pd.DataFrame({
-    "x": [1, 2, 3, 4, 5],
-    "y": [2, 1, 3, 5, 4],
-})
-
-plt.figure()
-plt.plot(df["x"], df["y"], marker="o")
-plt.title("Simple Line Plot")
-plt.xlabel("x")
-plt.ylabel("y")
-plt.show()
-```
-
-### Quick reflection
-
-- What stands out:
-- What I want to explore next:
-
-## Week 3
-
-### Notes
-
-- 
-
-### Visualization
-
-```{r}
-library(dplyr)
-library(ggplot2)
-
-summary_tbl <- mtcars %>%
-  group_by(cyl) %>%
-  summarize(
-    avg_mpg = mean(mpg),
-    n = n(),
-    .groups = "drop"
-  )
-
-ggplot(summary_tbl, aes(x = factor(cyl), y = avg_mpg)) +
-  geom_col() +
-  labs(
-    title = "Average MPG by Cylinder Count",
-    x = "Cylinders",
-    y = "Average MPG"
-  )
-```
-
-### Quick reflection
-
-- What stands out:
-- What I want to explore next:
+- Use the **sidebar** to navigate to each week.
+- Each week includes notes, code, and results.
+- For now, Week 01 is fully set up; the other weeks are placeholders that we will fill in as we catch up.
