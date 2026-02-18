@@ -1,0 +1,12 @@
+{
+  "hash": "40b8f2f77e8d9d5add7bc8c5f6091e43",
+  "result": {
+    "engine": "jupyter",
+    "markdown": "---\ntitle: \"Visualization Journal\"\nsubtitle: \"CSC 477 / GCSC 577\"\nformat:\n  html:\n    toc: true\n    number-sections: true\n    code-fold: true\n    code-summary: \"Show code\"\nexecute:\n  echo: true\n  warning: false\n  message: false\njupyter: python3\n---\n\n## About\n\nThis site is my course notebook for CSC 477 / GCSC 577. It contains weekly notes, small experiments, and visualizations created throughout the semester.\n\n## Week 1\n\n### Notes\n\n- \n\n### Visualization\n\n```{r}\nlibrary(ggplot2)\n\nggplot(mtcars, aes(x = mpg, y = hp)) +\n  geom_point() +\n  labs(\n    title = \"Horsepower vs. MPG\",\n    x = \"Miles per gallon (mpg)\",\n    y = \"Horsepower (hp)\"\n  )\n```\n\n### Quick reflection\n\n- What stands out:\n- What I want to explore next:\n\n## Week 2\n\n### Notes\n\n- \n\n### Visualization\n\n::: {#896516d5 .cell execution_count=1}\n``` {.python .cell-code}\nimport pandas as pd\nimport matplotlib.pyplot as plt\n\ndf = pd.DataFrame({\n    \"x\": [1, 2, 3, 4, 5],\n    \"y\": [2, 1, 3, 5, 4],\n})\n\nplt.figure()\nplt.plot(df[\"x\"], df[\"y\"], marker=\"o\")\nplt.title(\"Simple Line Plot\")\nplt.xlabel(\"x\")\nplt.ylabel(\"y\")\nplt.show()\n```\n\n::: {.cell-output .cell-output-display}\n![](index_files/figure-html/cell-2-output-1.png){width=589 height=449}\n:::\n:::\n\n\n### Quick reflection\n\n- What stands out:\n- What I want to explore next:\n\n## Week 3\n\n### Notes\n\n- \n\n### Visualization\n\n```{r}\nlibrary(dplyr)\nlibrary(ggplot2)\n\nsummary_tbl <- mtcars %>%\n  group_by(cyl) %>%\n  summarize(\n    avg_mpg = mean(mpg),\n    n = n(),\n    .groups = \"drop\"\n  )\n\nggplot(summary_tbl, aes(x = factor(cyl), y = avg_mpg)) +\n  geom_col() +\n  labs(\n    title = \"Average MPG by Cylinder Count\",\n    x = \"Cylinders\",\n    y = \"Average MPG\"\n  )\n```\n\n### Quick reflection\n\n- What stands out:\n- What I want to explore next:\n\n",
+    "supporting": [
+      "index_files\\figure-html"
+    ],
+    "filters": [],
+    "includes": {}
+  }
+}
