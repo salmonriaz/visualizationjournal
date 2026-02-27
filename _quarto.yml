@@ -2,19 +2,14 @@
 # FILE: _quarto.yml
 # PROJECT: Visualization Journal (CSC 477 / GCSC 577)
 # AUTHOR: Salmon Riaz
-# VERSION: 1.0.0
-# DATE: 2026-02-18
-# CHANGE: Initial website structure aligned to class "Course Notebook" layout (Week 01 ready).
+# VERSION: 1.0.2
+# DATE: 2026-02-27
+# CHANGE: Updated Week 07 sidebar label to match the "Multivariate Correlation Analysis" focus.
 #
 # PURPOSE
 # - Creates a Quarto WEBSITE with a left sidebar like the common class template
 # - Builds to /docs (GitHub Pages friendly)
 # - Adds navigation sections: Home, Weeks, Labs, Group Work
-#
-# NOTES
-# - Week 01 includes R-only chunks (matches the common Week 01 template style).
-# - When you later mix R + Python in the same .qmd, you must use reticulate::use_python()
-#   at the top of that specific file (knitr/reticulate behavior).
 # ==============================================
 
 project:
@@ -24,7 +19,7 @@ project:
 website:
   title: "Course Notebook of Visualizations — Salmon Riaz"
   sidebar:
-    style: "docked"
+    style: docked
     search: true
     contents:
       - href: index.qmd
@@ -43,9 +38,9 @@ website:
           - href: week-05.qmd
             text: "Week 05 — Tableau Public (continued)"
           - href: week-06.qmd
-            text: "Week 06 — (placeholder)"
+            text: "Week 06 — DataWeb (U.S. Exports)"
           - href: week-07.qmd
-            text: "Week 07 — (placeholder)"
+            text: "Week 07 — Multivariate Correlation Analysis"
           - href: week-08.qmd
             text: "Week 08 — (placeholder)"
           - href: week-09.qmd

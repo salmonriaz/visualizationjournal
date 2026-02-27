@@ -11,6 +11,13 @@ execute:
   message: false
 ---
 
+## Featured: Week 06 — DataWeb exports
+
+- **[Week 06 — DataWeb: U.S. Exports (2010–2024)](week-06.qmd#dataweb)**
+  - Total exports trend (2010–2024)
+  - Top destinations (2024) and share of total
+
+
 ## Welcome
 
 This site is my course notebook for **CSC 477 / GCSC 577 (Visualizations)**.

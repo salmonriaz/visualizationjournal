@@ -13,12 +13,144 @@
   {
     "objectID": "week-07.html",
     "href": "week-07.html",
-    "title": "Week 07 — (placeholder)",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
     "section": "",
-    "text": "Placeholder page. We’ll fill this in when we catch up to this week.",
+    "text": "This notebook applies multivariate correlation to a U.S. exports dataset (DataWeb export totals). The goal is to understand how major export destinations move together over time, and to translate that structure into a practical next step that connects exports to an Economy & Labor indicator.",
     "crumbs": [
       "Weeks",
-      "Week 07 — (placeholder)"
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#overview",
+    "href": "week-07.html#overview",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "",
+    "text": "This notebook applies multivariate correlation to a U.S. exports dataset (DataWeb export totals). The goal is to understand how major export destinations move together over time, and to translate that structure into a practical next step that connects exports to an Economy & Labor indicator.",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#objectives",
+    "href": "week-07.html#objectives",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "2 Objectives",
+    "text": "2 Objectives\n\nLoad and clean the exports dataset (robustly, even if Excel sheet layout varies).\nReshape the data into:\n\nLong format (for time-series plotting)\nWide numeric format (for correlation analysis)\n\nCreate multivariate visuals:\n\nTime-series trends for top export destinations\nCorrelation matrix + heatmap\ncorrplot (if installed)\nScatterplot matrix (GGally::ggpairs, if installed)\n\nEconomy & Labor tie-in (implemented):\n\nMerge annual exports with an annual labor indicator\nRun correlation + a simple regression to quantify the relationship",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#setup",
+    "href": "week-07.html#setup",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "3 1) Setup",
+    "text": "3 1) Setup\n\n\nCode\nlibrary(tidyverse)\nlibrary(readxl)\nlibrary(stringr)\nlibrary(scales)\n\n# Optional helpers (loaded only if installed)\nhas_pkg &lt;- function(pkg) {\n  requireNamespace(pkg, quietly = TRUE)\n}\nuse_pkg &lt;- function(pkg) {\n  if (has_pkg(pkg)) {\n    suppressPackageStartupMessages(library(pkg, character.only = TRUE))\n    TRUE\n  } else {\n    FALSE\n  }\n}\n\n# -----------------------------\n# Helper: pick first path that exists\n# -----------------------------\nfirst_existing &lt;- function(paths) {\n  hit &lt;- paths[file.exists(paths)]\n  if (length(hit) == 0) NA_character_ else hit[1]\n}\n\n# -----------------------------\n# Helper: identify columns that look like years (e.g., 2010, X2010)\n# -----------------------------\nget_year_cols &lt;- function(nm) {\n  nm &lt;- as.character(nm)\n  is_year &lt;- str_detect(nm, \"^(X)?(19|20)\\\\d{2}$\")\n  nm[is_year]\n}\n\n# -----------------------------\n# Helper: sanitize column names so dplyr/tibble never sees NA/blank names\n# (Fixes: \"Can't transform a data frame with `NA` or `\\\"\\\"` names.\")\n# -----------------------------\nsanitize_names &lt;- function(x) {\n  x &lt;- as.character(x)\n  x &lt;- str_trim(x)\n\n  # Replace NA / empty with stable placeholders\n  bad &lt;- is.na(x) | x == \"\"\n  if (any(bad)) {\n    x[bad] &lt;- paste0(\"col_\", which(bad))\n  }\n\n  # Make syntactic + unique\n  x &lt;- make.names(x, unique = TRUE)\n\n  # Light cleanup for readability\n  x &lt;- str_replace_all(x, \"\\\\.+\", \"_\")\n  x &lt;- str_replace_all(x, \"^_|_$\", \"\")\n  x\n}\n\n# -----------------------------\n# Helper: safely compute correlation matrix (returns NULL if insufficient numeric data)\n# -----------------------------\nsafe_cor &lt;- function(df_numeric, method = \"pearson\") {\n  if (is.null(df_numeric) || ncol(df_numeric) &lt; 2) return(NULL)\n\n  df_num &lt;- df_numeric %&gt;%\n    mutate(across(everything(), as.numeric)) %&gt;%\n    select(where(~ !all(is.na(.x))))\n\n  if (ncol(df_num) &lt; 2) return(NULL)\n\n  tryCatch(\n    stats::cor(df_num, use = \"pairwise.complete.obs\", method = method),\n    error = function(e) NULL\n  )\n}",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#load-data-robust-excel-handling",
+    "href": "week-07.html#load-data-robust-excel-handling",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "4 2) Load data (robust Excel handling)",
+    "text": "4 2) Load data (robust Excel handling)\nThis project uses an Excel export from DataWeb. Exported files can differ by: - sheet names - header row location - presence of “metadata” rows above the year-by-year table\nThe loader below scans each sheet and finds the row that looks most like a year header (2010–2024 style). It then reads the table starting at that header row.\n\n\nCode\ncandidate_files &lt;- c(\n  \"data/DataWeb-Query-Export_us_exports_total_2010_2024.xlsx\",\n  \"data/us_exports.xlsx\",\n  \"data/exports.xlsx\",\n  \"data/dataweb.xlsx\"\n)\n\nfile_used &lt;- first_existing(candidate_files)\nfile_used\n\n\n[1] \"data/DataWeb-Query-Export_us_exports_total_2010_2024.xlsx\"\n\n\n\n\nCode\n# If no file exists, stop early but keep the notebook readable.\nif (is.na(file_used)) {\n  stop(\"No exports Excel file was found in /data. Add the DataWeb export and re-render.\")\n}\n\nsheets &lt;- readxl::excel_sheets(file_used)\n\n# Detect which row in a sheet is most likely the header row by counting \"year-like\" values\ndetect_header_row &lt;- function(path, sheet, max_preview_rows = 40) {\n  preview &lt;- readxl::read_excel(\n    path,\n    sheet = sheet,\n    col_names = FALSE,\n    n_max = max_preview_rows\n  )\n\n  # Count how many year-like tokens appear in each row\n  year_counts &lt;- map_int(seq_len(nrow(preview)), function(r) {\n    row_vals &lt;- as.character(unlist(preview[r, ], use.names = FALSE))\n    row_vals &lt;- str_trim(row_vals)\n    sum(str_detect(row_vals, \"^(X)?(19|20)\\\\d{2}$\"), na.rm = TRUE)\n  })\n\n  best_row &lt;- which.max(year_counts)\n  # If nothing looks like a header, return NA\n  if (max(year_counts, na.rm = TRUE) == 0) return(NA_integer_)\n  best_row\n}\n\nsheet_audit &lt;- tibble(\n  sheet = sheets,\n  header_row = map_int(sheets, ~ detect_header_row(file_used, .x)),\n  selected = header_row == max(header_row, na.rm = TRUE)\n)\n\nsheet_audit\n\n\n# A tibble: 2 × 3\n  sheet            header_row selected\n  &lt;chr&gt;                 &lt;int&gt; &lt;lgl&gt;   \n1 Query Parameters         NA NA      \n2 FAS Value                 3 TRUE    \n\n\n\n\nCode\n# Choose the sheet with the earliest (highest confidence) detected header row.\n# (If multiple, pick the first.)\nchosen_sheet &lt;- sheet_audit %&gt;%\n  filter(!is.na(header_row)) %&gt;%\n  arrange(header_row) %&gt;%\n  slice(1) %&gt;%\n  pull(sheet)\n\nchosen_sheet\n\n\n[1] \"FAS Value\"\n\n\n\n\nCode\n# Read the chosen sheet starting at the detected header row.\nhdr_row &lt;- sheet_audit %&gt;% filter(sheet == chosen_sheet) %&gt;% pull(header_row)\n\nraw_block &lt;- readxl::read_excel(\n  file_used,\n  sheet = chosen_sheet,\n  skip = hdr_row - 1,\n  col_names = FALSE\n)\n\n# First row of this block contains the headers (possibly with blanks)\nheader_vec &lt;- as.character(unlist(raw_block[1, ], use.names = FALSE))\nnames(raw_block) &lt;- sanitize_names(header_vec)\n\n# Remove the header row from the data\nraw_tbl &lt;- raw_block[-1, ] %&gt;% as_tibble()\n\nglimpse(raw_tbl)\n\n\nRows: 2\nColumns: 17\n$ Data_Type &lt;chr&gt; \"FAS Value\", \"Total:\"\n$ TOTAL     &lt;chr&gt; NA, NA\n$ X2010     &lt;chr&gt; \"1122.57\", \"1,122.57\"\n$ X2011     &lt;chr&gt; \"1300.12\", \"1,300.12\"\n$ X2012     &lt;chr&gt; \"1352.21\", \"1,352.21\"\n$ X2013     &lt;chr&gt; \"1371.13\", \"1,371.13\"\n$ X2014     &lt;chr&gt; \"1398.85\", \"1,398.85\"\n$ X2015     &lt;chr&gt; \"1286.17\", \"1,286.17\"\n$ X2016     &lt;chr&gt; \"1226.93\", \"1,226.93\"\n$ X2017     &lt;chr&gt; \"1308.39\", \"1,308.39\"\n$ X2018     &lt;chr&gt; \"1413.18\", \"1,413.18\"\n$ X2019     &lt;chr&gt; \"1395.31\", \"1,395.31\"\n$ X2020     &lt;chr&gt; \"1205.39\", \"1,205.39\"\n$ X2021     &lt;chr&gt; \"1481.18\", \"1,481.18\"\n$ X2022     &lt;chr&gt; \"1751.83\", \"1,751.83\"\n$ X2023     &lt;chr&gt; \"1691.4\", \"1,691.4\"\n$ X2024     &lt;chr&gt; \"1716.27\", \"1,716.27\"",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#clean-tidy-to-long-format",
+    "href": "week-07.html#clean-tidy-to-long-format",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "5 3) Clean + tidy to long format",
+    "text": "5 3) Clean + tidy to long format\nGoal: build a consistent table with columns:\n\nEntity (destination / partner / category)\nYear\nExports (numeric)\n\n\n\nCode\n# Heuristic: the \"Entity\" column is the first non-year column.\nyear_cols &lt;- get_year_cols(names(raw_tbl))\nnon_year_cols &lt;- setdiff(names(raw_tbl), year_cols)\n\nentity_col &lt;- non_year_cols[1]\nentity_col\n\n\n[1] \"Data_Type\"\n\n\n\n\nCode\n# Build long table\nexports_long &lt;- raw_tbl %&gt;%\n  rename(Entity = all_of(entity_col)) %&gt;%\n  mutate(Entity = as.character(Entity)) %&gt;%\n  pivot_longer(\n    cols = all_of(year_cols),\n    names_to = \"Year\",\n    values_to = \"Exports\"\n  ) %&gt;%\n  mutate(\n    Year = as.integer(str_remove(Year, \"^X\")),\n    Exports = as.numeric(Exports)\n  ) %&gt;%\n  filter(!is.na(Entity), Entity != \"\", !is.na(Year))\n\n# Quick check\nexports_long %&gt;% slice_head(n = 10)\n\n\n# A tibble: 10 × 4\n   Entity    TOTAL  Year Exports\n   &lt;chr&gt;     &lt;chr&gt; &lt;int&gt;   &lt;dbl&gt;\n 1 FAS Value &lt;NA&gt;   2010   1123.\n 2 FAS Value &lt;NA&gt;   2011   1300.\n 3 FAS Value &lt;NA&gt;   2012   1352.\n 4 FAS Value &lt;NA&gt;   2013   1371.\n 5 FAS Value &lt;NA&gt;   2014   1399.\n 6 FAS Value &lt;NA&gt;   2015   1286.\n 7 FAS Value &lt;NA&gt;   2016   1227.\n 8 FAS Value &lt;NA&gt;   2017   1308.\n 9 FAS Value &lt;NA&gt;   2018   1413.\n10 FAS Value &lt;NA&gt;   2019   1395.",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#trend-view-for-top-destinations",
+    "href": "week-07.html#trend-view-for-top-destinations",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "6 4) Trend view for top destinations",
+    "text": "6 4) Trend view for top destinations\nTo keep multivariate visuals readable, focus on the top N entities by total exports across all years.\n\n\nCode\ntop_n &lt;- 10\n\ntop_entities &lt;- exports_long %&gt;%\n  group_by(Entity) %&gt;%\n  summarize(total_exports = sum(Exports, na.rm = TRUE), .groups = \"drop\") %&gt;%\n  arrange(desc(total_exports)) %&gt;%\n  slice_head(n = top_n) %&gt;%\n  pull(Entity)\n\ntop_entities\n\n\n[1] \"FAS Value\" \"Total:\"   \n\n\n\n\nCode\ntrend_df &lt;- exports_long %&gt;%\n  filter(Entity %in% top_entities, !is.na(Exports)) %&gt;%\n  group_by(Entity, Year) %&gt;%\n  summarize(Exports = sum(Exports, na.rm = TRUE), .groups = \"drop\")\n\nggplot(trend_df, aes(x = Year, y = Exports, color = Entity)) +\n  geom_line(linewidth = 1) +\n  geom_point(size = 2) +\n  scale_y_continuous(labels = scales::comma) +\n  labs(\n    title = \"Top export destinations over time\",\n    subtitle = paste0(\"Top \", top_n, \" entities by total exports (all years combined)\"),\n    x = \"Year\",\n    y = \"Exports (as provided in DataWeb export)\"\n  ) +\n  theme_minimal()",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#build-a-wide-numeric-dataset-for-correlations",
+    "href": "week-07.html#build-a-wide-numeric-dataset-for-correlations",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "7 5) Build a “wide” numeric dataset for correlations",
+    "text": "7 5) Build a “wide” numeric dataset for correlations\nWide format requirement:\n\nrows = Year\ncolumns = export series for each Entity\nvalues = Exports\n\n\n\nCode\nwide_numeric &lt;- exports_long %&gt;%\n  filter(Entity %in% top_entities) %&gt;%\n  group_by(Entity, Year) %&gt;%\n  summarize(Exports = sum(Exports, na.rm = TRUE), .groups = \"drop\") %&gt;%\n  pivot_wider(names_from = Entity, values_from = Exports) %&gt;%\n  arrange(Year)\n\nwide_numeric %&gt;% slice_head(n = 5)\n\n\n# A tibble: 5 × 3\n   Year `FAS Value` `Total:`\n  &lt;int&gt;       &lt;dbl&gt;    &lt;dbl&gt;\n1  2010       1123.        0\n2  2011       1300.        0\n3  2012       1352.        0\n4  2013       1371.        0\n5  2014       1399.        0",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#correlation-matrix-multivariate",
+    "href": "week-07.html#correlation-matrix-multivariate",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "8 6) Correlation matrix (multivariate)",
+    "text": "8 6) Correlation matrix (multivariate)\n\n\nCode\nx_mat &lt;- wide_numeric %&gt;% select(-Year)\ncorr_mat &lt;- safe_cor(x_mat, method = \"pearson\")\n\nif (is.null(corr_mat)) {\n  stop(\"Correlation matrix could not be computed (not enough numeric data).\")\n}\n\ncorr_mat[1:min(5, nrow(corr_mat)), 1:min(5, ncol(corr_mat))]\n\n\n          FAS Value Total:\nFAS Value         1     NA\nTotal:           NA     NA",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#visualize-correlations",
+    "href": "week-07.html#visualize-correlations",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "9 7) Visualize correlations",
+    "text": "9 7) Visualize correlations\n\n9.1 7A) Heatmap (ggplot)\n\n\nCode\ncorr_df &lt;- as.data.frame(corr_mat) %&gt;%\n  tibble::rownames_to_column(\"Var1\") %&gt;%\n  pivot_longer(-Var1, names_to = \"Var2\", values_to = \"Correlation\")\n\nggplot(corr_df, aes(x = Var1, y = Var2, fill = Correlation)) +\n  geom_tile() +\n  geom_text(aes(label = sprintf(\"%.2f\", Correlation)), size = 3) +\n  scale_fill_gradient2(limits = c(-1, 1)) +\n  theme_minimal() +\n  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +\n  labs(\n    title = \"Correlation heatmap (Pearson)\",\n    subtitle = \"Top export destinations — strength of co-movement across years\",\n    x = NULL,\n    y = NULL\n  )\n\n\n\n\n\n\n\n\n\n\n\n9.2 7B) corrplot (only if installed)\n\n\nCode\nif (use_pkg(\"corrplot\")) {\n  corrplot::corrplot(\n    corr_mat,\n    method = \"color\",\n    type = \"upper\",\n    addCoef.col = \"black\",\n    tl.cex = 0.8,\n    number.cex = 0.7\n  )\n}\n\n\n\n\n\n\n\n\n\n\n\n9.3 7C) Scatterplot matrix (optional; only if GGally installed)\n\n\nCode\nif (use_pkg(\"GGally\")) {\n  # ggpairs can be heavy. Keep it small and numeric.\n  x_small &lt;- x_mat\n  if (ncol(x_small) &gt;= 2) {\n    GGally::ggpairs(x_small)\n  }\n}",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#interpretation-star-scope-action",
+    "href": "week-07.html#interpretation-star-scope-action",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "10 8) Interpretation (STAR: Scope + Action)",
+    "text": "10 8) Interpretation (STAR: Scope + Action)\n\n10.1 Scope\nThe dataset summarizes U.S. exports over time, grouped by destination/partner (depending on the DataWeb export configuration). Multivariate correlation helps identify which destinations tend to increase/decrease together over the same years.\n\n\n10.2 Action\n\nA time-series view identifies the most influential destinations (top N).\nA wide numeric dataset is created to compute Pearson correlations.\nThe correlation matrix and heatmap reveal pairs (or clusters) of destinations with strong co-movement, which can support hypotheses about shared economic forces (global demand cycles, commodity effects, shipping constraints, etc.).",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#economy-labor-tie-in-implemented",
+    "href": "week-07.html#economy-labor-tie-in-implemented",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "11 9) Economy & Labor tie-in (implemented)",
+    "text": "11 9) Economy & Labor tie-in (implemented)\nA practical next step is to connect exports to a labor-market indicator.\nThis section uses the built-in ggplot2::economics dataset (monthly U.S. macro series) to compute an annual unemployment rate average, then merges it with annual exports.\nThis produces: - Correlation between total exports and unemployment - A simple regression model for interpretability\n\n\nCode\n# 9A) Compute annual unemployment rate (from ggplot2 economics dataset)\nlabor_annual &lt;- ggplot2::economics %&gt;%\n  mutate(\n    Year = lubridate::year(date)\n  ) %&gt;%\n  group_by(Year) %&gt;%\n  summarize(\n    unemployment_avg = mean(unemploy, na.rm = TRUE),\n    .groups = \"drop\"\n  )\n\nlabor_annual %&gt;% slice_head(n = 5)\n\n\n# A tibble: 5 × 2\n   Year unemployment_avg\n  &lt;dbl&gt;            &lt;dbl&gt;\n1  1967            3012.\n2  1968            2797.\n3  1969            2830.\n4  1970            4127.\n5  1971            5022.\n\n\n\n\nCode\n# 9B) Compute annual total exports (sum across all entities for each year)\nexports_total_annual &lt;- exports_long %&gt;%\n  group_by(Year) %&gt;%\n  summarize(\n    exports_total = sum(Exports, na.rm = TRUE),\n    .groups = \"drop\"\n  )\n\nexports_total_annual %&gt;% slice_head(n = 5)\n\n\n# A tibble: 5 × 2\n   Year exports_total\n  &lt;int&gt;         &lt;dbl&gt;\n1  2010         1123.\n2  2011         1300.\n3  2012         1352.\n4  2013         1371.\n5  2014         1399.\n\n\n\n\nCode\n# 9C) Merge and analyze\necon_labor_df &lt;- exports_total_annual %&gt;%\n  inner_join(labor_annual, by = \"Year\") %&gt;%\n  arrange(Year)\n\necon_labor_df %&gt;% slice_head(n = 10)\n\n\n# A tibble: 6 × 3\n   Year exports_total unemployment_avg\n  &lt;dbl&gt;         &lt;dbl&gt;            &lt;dbl&gt;\n1  2010         1123.           14808.\n2  2011         1300.           13738.\n3  2012         1352.           12499.\n4  2013         1371.           11457.\n5  2014         1399.            9602.\n6  2015         1286.            8636.\n\n\n\n\nCode\n# 9D) Visualization: exports vs unemployment (annual)\nggplot(econ_labor_df, aes(x = unemployment_avg, y = exports_total)) +\n  geom_point(size = 2) +\n  geom_smooth(method = \"lm\", se = FALSE) +\n  scale_y_continuous(labels = scales::comma) +\n  labs(\n    title = \"Exports vs labor conditions (annual)\",\n    subtitle = \"Annual exports total vs annual average unemployment (from ggplot2::economics)\",\n    x = \"Annual average unemployment (count, economics dataset)\",\n    y = \"Annual total exports\"\n  ) +\n  theme_minimal()\n\n\n\n\n\n\n\n\n\n\n\nCode\n# 9E) Correlation + regression\ncor_val &lt;- cor(econ_labor_df$exports_total, econ_labor_df$unemployment_avg, use = \"complete.obs\")\ncor_val\n\n\n[1] -0.5898675\n\n\n\n\nCode\nlm_fit &lt;- lm(exports_total ~ unemployment_avg, data = econ_labor_df)\nsummary(lm_fit)\n\n\n\nCall:\nlm(formula = exports_total ~ unemployment_avg, data = econ_labor_df)\n\nResiduals:\n      1       2       3       4       5       6 \n-108.42   42.84   64.47   57.77   39.88  -96.54 \n\nCoefficients:\n                   Estimate Std. Error t value Pr(&gt;|t|)   \n(Intercept)      1594.98558  201.70061   7.908  0.00138 **\nunemployment_avg   -0.02458    0.01683  -1.461  0.21782   \n---\nSignif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n\nResidual standard error: 89.44 on 4 degrees of freedom\nMultiple R-squared:  0.3479,    Adjusted R-squared:  0.1849 \nF-statistic: 2.134 on 1 and 4 DF,  p-value: 0.2178\n\n\n\n11.1 Interpretation\n\nIf the correlation is negative, higher unemployment years tend to align with lower export totals (consistent with weaker demand).\nIf the correlation is positive, the time window may include structural shifts (e.g., exports rising while unemployment rises) and should be checked alongside other macro indicators (GDP, industrial production, inflation).",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
+    ]
+  },
+  {
+    "objectID": "week-07.html#forward-momentum-for-the-project",
+    "href": "week-07.html#forward-momentum-for-the-project",
+    "title": "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)",
+    "section": "12 10) Forward momentum for the project",
+    "text": "12 10) Forward momentum for the project\nThis week’s correlation structure provides a foundation for a predictive model.\n\nExpand the labor linkage using additional annual indicators (labor-force participation, CPI, GDP, JOLTS).\nMove from correlation to multilinear regression, using top destinations as predictors and a macro outcome as the response.\nValidate assumptions (collinearity, residual diagnostics) and compare model variants (AIC / adjusted R²).",
+    "crumbs": [
+      "Weeks",
+      "Week 07 — Multivariate Correlation Analysis"
     ]
   },
   {
@@ -81,7 +213,7 @@
     "href": "week-01.html#r-work",
     "title": "Week 01 — Getting Started",
     "section": "R work",
-    "text": "R work\n\n\nCode\nx &lt;- rnorm(100)\nmean(x)\n\n\n[1] 0.207322\n\n\n\n\nCode\nhist(x)",
+    "text": "R work\n\n\nCode\nx &lt;- rnorm(100)\nmean(x)\n\n\n[1] -0.09662718\n\n\n\n\nCode\nhist(x)",
     "crumbs": [
       "Weeks",
       "Week 01 — Getting Started"
@@ -92,7 +224,17 @@
     "href": "index.html",
     "title": "Visualization Journal",
     "section": "",
-    "text": "This site is my course notebook for CSC 477 / GCSC 577 (Visualizations). It contains weekly notes, small experiments, and visualizations created throughout the semester.\n\n\n\nUse the sidebar to navigate to each week.\nEach week includes notes, code, and results.\nFor now, Week 01 is fully set up; the other weeks are placeholders that we will fill in as we catch up.",
+    "text": "Week 06 — DataWeb: U.S. Exports (2010–2024)\n\nTotal exports trend (2010–2024)\nTop destinations (2024) and share of total",
+    "crumbs": [
+      "Home"
+    ]
+  },
+  {
+    "objectID": "index.html#featured-week-06-dataweb-exports",
+    "href": "index.html#featured-week-06-dataweb-exports",
+    "title": "Visualization Journal",
+    "section": "",
+    "text": "Week 06 — DataWeb: U.S. Exports (2010–2024)\n\nTotal exports trend (2010–2024)\nTop destinations (2024) and share of total",
     "crumbs": [
       "Home"
     ]
@@ -101,8 +243,8 @@
     "objectID": "index.html#welcome",
     "href": "index.html#welcome",
     "title": "Visualization Journal",
-    "section": "",
-    "text": "This site is my course notebook for CSC 477 / GCSC 577 (Visualizations). It contains weekly notes, small experiments, and visualizations created throughout the semester.\n\n\n\nUse the sidebar to navigate to each week.\nEach week includes notes, code, and results.\nFor now, Week 01 is fully set up; the other weeks are placeholders that we will fill in as we catch up.",
+    "section": "Welcome",
+    "text": "Welcome\nThis site is my course notebook for CSC 477 / GCSC 577 (Visualizations). It contains weekly notes, small experiments, and visualizations created throughout the semester.\n\nHow to use this notebook\n\nUse the sidebar to navigate to each week.\nEach week includes notes, code, and results.\nFor now, Week 01 is fully set up; the other weeks are placeholders that we will fill in as we catch up.",
     "crumbs": [
       "Home"
     ]
@@ -198,12 +340,89 @@
   {
     "objectID": "week-06.html",
     "href": "week-06.html",
-    "title": "Week 06 — (placeholder)",
+    "title": "Week 06 — DataWeb: U.S. Exports (2010–2024)",
     "section": "",
-    "text": "Placeholder page. We’ll fill this in when we catch up to this week.",
+    "text": "This section uses two exports datasets downloaded from the U.S. International Trade Commission (USITC) DataWeb site:\n\nTotal U.S. exports (all destinations), 2010–2024\n\nU.S. exports by destination country, 2010–2024\n\nBoth spreadsheets are stored in this repo under data/ so the site can render the analysis reproducibly.\n\n\n\n\n\n\nNote\n\n\n\nIf your DataWeb download includes slightly different sheets/headers in the future, the cleaning steps below are written defensively (they search for the “2010…2024” year columns and build tidy data from them).",
     "crumbs": [
       "Weeks",
-      "Week 06 — (placeholder)"
+      "Week 06 — DataWeb (U.S. Exports)"
+    ]
+  },
+  {
+    "objectID": "week-06.html#dataweb",
+    "href": "week-06.html#dataweb",
+    "title": "Week 06 — DataWeb: U.S. Exports (2010–2024)",
+    "section": "",
+    "text": "This section uses two exports datasets downloaded from the U.S. International Trade Commission (USITC) DataWeb site:\n\nTotal U.S. exports (all destinations), 2010–2024\n\nU.S. exports by destination country, 2010–2024\n\nBoth spreadsheets are stored in this repo under data/ so the site can render the analysis reproducibly.\n\n\n\n\n\n\nNote\n\n\n\nIf your DataWeb download includes slightly different sheets/headers in the future, the cleaning steps below are written defensively (they search for the “2010…2024” year columns and build tidy data from them).",
+    "crumbs": [
+      "Weeks",
+      "Week 06 — DataWeb (U.S. Exports)"
+    ]
+  },
+  {
+    "objectID": "week-06.html#load-packages",
+    "href": "week-06.html#load-packages",
+    "title": "Week 06 — DataWeb: U.S. Exports (2010–2024)",
+    "section": "1) Load packages",
+    "text": "1) Load packages\n\n\nCode\nlibrary(readxl)\nlibrary(dplyr)\nlibrary(tidyr)\nlibrary(stringr)\nlibrary(ggplot2)",
+    "crumbs": [
+      "Weeks",
+      "Week 06 — DataWeb (U.S. Exports)"
+    ]
+  },
+  {
+    "objectID": "week-06.html#read-the-excel-files-all-sheets",
+    "href": "week-06.html#read-the-excel-files-all-sheets",
+    "title": "Week 06 — DataWeb: U.S. Exports (2010–2024)",
+    "section": "2) Read the Excel files (all sheets)",
+    "text": "2) Read the Excel files (all sheets)\n\n\nCode\n# File paths (relative to project root)\nf_total   &lt;- \"data/DataWeb-Query-Export_us_exports_total_2010_2024.xlsx\"\nf_country &lt;- \"data/DataWeb-Query-Export_us_exports_by_country_2010_2024.xlsx\"\n\n# Optional: list every sheet (helps satisfy the “look at all sheets” requirement)\nexcel_sheets(f_total)\n\n\n[1] \"Query Parameters\" \"FAS Value\"       \n\n\nCode\nexcel_sheets(f_country)\n\n\n[1] \"Query Parameters\" \"FAS Value\"",
+    "crumbs": [
+      "Weeks",
+      "Week 06 — DataWeb (U.S. Exports)"
+    ]
+  },
+  {
+    "objectID": "week-06.html#total-exports-tidy-to-year-value",
+    "href": "week-06.html#total-exports-tidy-to-year-value",
+    "title": "Week 06 — DataWeb: U.S. Exports (2010–2024)",
+    "section": "3) Total exports (tidy to Year + Value)",
+    "text": "3) Total exports (tidy to Year + Value)\n\n\nCode\n# The “FAS Value” sheet is the main data table in both downloads.\n# DataWeb often places the real header row a couple rows down.\nraw_total &lt;- read_excel(f_total, sheet = \"FAS Value\", col_names = FALSE)\n\n# Find the header row by looking for the first row that contains a year like 2010\nheader_row_total &lt;- which(apply(raw_total, 1, function(r) any(str_detect(as.character(r), \"^2010$\"))))[1]\nheader_row_total\n\n\n[1] 3\n\n\n\n\nCode\n# Build column names from that header row, then keep the data rows under it.\ncolnames_total &lt;- str_trim(as.character(unlist(raw_total[header_row_total, ])))\ncolnames_total &lt;- make.unique(colnames_total)\ntotal_df &lt;- raw_total[(header_row_total + 1):nrow(raw_total), ]\nnames(total_df) &lt;- colnames_total\n\n# IMPORTANT FIX:\n# - Use POSIX whitespace class instead of \"\\s\" to avoid R parse errors.\nyear_col_pattern &lt;- \"^[[:space:]]*[0-9]{4}[[:space:]]*$\"\n\n# Keep only the year columns and pivot longer\ntotal_tidy &lt;- total_df |&gt;\n  select(matches(year_col_pattern)) |&gt;\n  slice(1) |&gt;\n  pivot_longer(\n    cols = everything(),\n    names_to = \"Year\",\n    values_to = \"Exports\"\n  ) |&gt;\n  mutate(\n    Year = as.integer(str_trim(Year)),\n    Exports = as.numeric(Exports)\n  ) |&gt;\n  arrange(Year)\n\nglimpse(total_tidy)\n\n\nRows: 15\nColumns: 2\n$ Year    &lt;int&gt; 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 20…\n$ Exports &lt;dbl&gt; 1122.57, 1300.12, 1352.21, 1371.13, 1398.85, 1286.17, 1226.93,…",
+    "crumbs": [
+      "Weeks",
+      "Week 06 — DataWeb (U.S. Exports)"
+    ]
+  },
+  {
+    "objectID": "week-06.html#exports-by-country-tidy-to-country-year-value",
+    "href": "week-06.html#exports-by-country-tidy-to-country-year-value",
+    "title": "Week 06 — DataWeb: U.S. Exports (2010–2024)",
+    "section": "4) Exports by country (tidy to Country + Year + Value)",
+    "text": "4) Exports by country (tidy to Country + Year + Value)\n\n\nCode\nraw_country &lt;- read_excel(f_country, sheet = \"FAS Value\", col_names = FALSE)\n\n# Find the header row by looking for the first row that contains \"Country\"\nheader_row_country &lt;- which(apply(raw_country, 1, function(r) any(str_detect(as.character(r), \"^Country$\"))))[1]\nheader_row_country\n\n\n[1] 3\n\n\n\n\nCode\ncolnames_country &lt;- str_trim(as.character(unlist(raw_country[header_row_country, ])))\ncolnames_country &lt;- make.unique(colnames_country)\ncountry_df &lt;- raw_country[(header_row_country + 1):nrow(raw_country), ]\nnames(country_df) &lt;- colnames_country\n\n# Reuse the same year column pattern\nyear_col_pattern &lt;- \"^[[:space:]]*[0-9]{4}[[:space:]]*$\"\n\ncountry_tidy &lt;- country_df |&gt;\n  filter(!is.na(Country)) |&gt;\n  select(Country, matches(year_col_pattern)) |&gt;\n  pivot_longer(\n    cols = -Country,\n    names_to = \"Year\",\n    values_to = \"Exports\"\n  ) |&gt;\n  mutate(\n    Country = str_trim(as.character(Country)),\n    Year = as.integer(str_trim(Year)),\n    Exports = as.numeric(Exports)\n  ) |&gt;\n  filter(!is.na(Exports)) |&gt;\n  arrange(Country, Year)\n\nglimpse(country_tidy)\n\n\nRows: 3,555\nColumns: 3\n$ Country &lt;chr&gt; \"Afghanistan\", \"Afghanistan\", \"Afghanistan\", \"Afghanistan\", \"A…\n$ Year    &lt;int&gt; 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 20…\n$ Exports &lt;dbl&gt; 2.03, 2.79, 1.34, 1.23, 0.67, 0.42, 0.89, 0.90, 1.17, 0.70, 0.…",
+    "crumbs": [
+      "Weeks",
+      "Week 06 — DataWeb (U.S. Exports)"
+    ]
+  },
+  {
+    "objectID": "week-06.html#visualizations",
+    "href": "week-06.html#visualizations",
+    "title": "Week 06 — DataWeb: U.S. Exports (2010–2024)",
+    "section": "5) Visualizations",
+    "text": "5) Visualizations\n\nA. Total U.S. exports over time (line chart)\n\n\nCode\nggplot(total_tidy, aes(x = Year, y = Exports)) +\n  geom_line(linewidth = 1) +\n  geom_point(size = 1.5) +\n  labs(\n    title = \"Total U.S. Exports (FAS Value), 2010–2024\",\n    subtitle = \"Source: USITC DataWeb download\",\n    x = \"Year\",\n    y = \"Exports (FAS Value, reported units from DataWeb download)\"\n  ) +\n  theme_minimal()\n\n\n\n\n\n\n\n\n\n\n\nB. Top 10 export destinations in 2024 (bar chart)\n\n\nCode\ntop_2024 &lt;- country_tidy |&gt;\n  filter(Year == 2024) |&gt;\n  group_by(Country) |&gt;\n  summarise(Exports = sum(Exports, na.rm = TRUE), .groups = \"drop\") |&gt;\n  arrange(desc(Exports)) |&gt;\n  slice_head(n = 10)\n\ntop_2024\n\n\n# A tibble: 10 × 2\n   Country        Exports\n   &lt;chr&gt;            &lt;dbl&gt;\n 1 Canada           289. \n 2 Mexico           250. \n 3 China            125. \n 4 Netherlands       75.7\n 5 Japan             70.3\n 6 United Kingdom    65.9\n 7 Germany           65.7\n 8 South Korea       61.6\n 9 Brazil            40.8\n10 Singapore         37.9\n\n\n\n\nCode\nggplot(top_2024, aes(x = reorder(Country, Exports), y = Exports)) +\n  geom_col() +\n  coord_flip() +\n  labs(\n    title = \"Top 10 U.S. Export Destinations (2024)\",\n    subtitle = \"FAS Value from USITC DataWeb download\",\n    x = \"\",\n    y = \"Exports (FAS Value, reported units from DataWeb download)\"\n  ) +\n  theme_minimal()\n\n\n\n\n\n\n\n\n\n\n\nC. Share of top destinations vs the world (2024)\n\n\nCode\ntotal_2024 &lt;- total_tidy |&gt;\n  filter(Year == 2024) |&gt;\n  pull(Exports) |&gt;\n  as.numeric()\n\nshare_2024 &lt;- top_2024 |&gt;\n  mutate(Share = Exports / total_2024) |&gt;\n  arrange(desc(Share))\n\nshare_2024\n\n\n# A tibble: 10 × 3\n   Country        Exports  Share\n   &lt;chr&gt;            &lt;dbl&gt;  &lt;dbl&gt;\n 1 Canada           289.  0.169 \n 2 Mexico           250.  0.146 \n 3 China            125.  0.0729\n 4 Netherlands       75.7 0.0441\n 5 Japan             70.3 0.0410\n 6 United Kingdom    65.9 0.0384\n 7 Germany           65.7 0.0383\n 8 South Korea       61.6 0.0359\n 9 Brazil            40.8 0.0238\n10 Singapore         37.9 0.0221\n\n\n\n\nCode\nggplot(share_2024, aes(x = reorder(Country, Share), y = Share)) +\n  geom_col() +\n  coord_flip() +\n  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +\n  labs(\n    title = \"Share of Total U.S. Exports (2024): Top 10 Destinations\",\n    subtitle = \"Shares computed using Total Exports (all destinations) from the companion DataWeb download\",\n    x = \"\",\n    y = \"Share of total exports\"\n  ) +\n  theme_minimal()",
+    "crumbs": [
+      "Weeks",
+      "Week 06 — DataWeb (U.S. Exports)"
+    ]
+  },
+  {
+    "objectID": "week-06.html#quick-interpretation-star-scope-action",
+    "href": "week-06.html#quick-interpretation-star-scope-action",
+    "title": "Week 06 — DataWeb: U.S. Exports (2010–2024)",
+    "section": "Quick interpretation (STAR: Scope + Action)",
+    "text": "Quick interpretation (STAR: Scope + Action)\n\nScope (context): This is annual U.S. export value (FAS Value) from DataWeb, covering 2010–2024.\n\nAction (what we did): We pulled the total series and the country breakdown into tidy tables, then visualized trends over time and the top destinations in the most recent full year.",
+    "crumbs": [
+      "Weeks",
+      "Week 06 — DataWeb (U.S. Exports)"
     ]
   },
   {

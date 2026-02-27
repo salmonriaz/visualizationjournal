@@ -1,14 +1,484 @@
 ---
-title: "Week 07 — (placeholder)"
+title: "Week 07 — Multivariate Correlation Analysis (U.S. Exports Project)"
+author: "Salmon Riaz"
 format:
   html:
     toc: true
+    toc-depth: 3
+    number-sections: true
+    theme: cosmo
 execute:
   echo: true
   warning: false
   message: false
 ---
 
+## Overview
 
+This notebook applies **multivariate correlation** to a U.S. exports dataset (DataWeb export totals).
+The goal is to understand how major export destinations **move together over time**, and to translate that
+structure into a practical next step that connects exports to an **Economy & Labor** indicator.
 
-> Placeholder page. We’ll fill this in when we catch up to this week.
+## Objectives
+
+1. Load and clean the exports dataset (robustly, even if Excel sheet layout varies).
+2. Reshape the data into:
+   - **Long format** (for time-series plotting)
+   - **Wide numeric format** (for correlation analysis)
+3. Create multivariate visuals:
+   - Time-series trends for top export destinations
+   - Correlation matrix + heatmap
+   - `corrplot` (if installed)
+   - Scatterplot matrix (`GGally::ggpairs`, if installed)
+4. **Economy & Labor tie-in (implemented):**
+   - Merge annual exports with an annual labor indicator
+   - Run correlation + a simple regression to quantify the relationship
+
+---
+
+## 1) Setup
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(stringr)
+library(scales)
+
+# Optional helpers (loaded only if installed)
+has_pkg <- function(pkg) {
+  requireNamespace(pkg, quietly = TRUE)
+}
+use_pkg <- function(pkg) {
+  if (has_pkg(pkg)) {
+    suppressPackageStartupMessages(library(pkg, character.only = TRUE))
+    TRUE
+  } else {
+    FALSE
+  }
+}
+
+# -----------------------------
+# Helper: pick first path that exists
+# -----------------------------
+first_existing <- function(paths) {
+  hit <- paths[file.exists(paths)]
+  if (length(hit) == 0) NA_character_ else hit[1]
+}
+
+# -----------------------------
+# Helper: identify columns that look like years (e.g., 2010, X2010)
+# -----------------------------
+get_year_cols <- function(nm) {
+  nm <- as.character(nm)
+  is_year <- str_detect(nm, "^(X)?(19|20)\\d{2}$")
+  nm[is_year]
+}
+
+# -----------------------------
+# Helper: sanitize column names so dplyr/tibble never sees NA/blank names
+# (Fixes: "Can't transform a data frame with `NA` or `\"\"` names.")
+# -----------------------------
+sanitize_names <- function(x) {
+  x <- as.character(x)
+  x <- str_trim(x)
+
+  # Replace NA / empty with stable placeholders
+  bad <- is.na(x) | x == ""
+  if (any(bad)) {
+    x[bad] <- paste0("col_", which(bad))
+  }
+
+  # Make syntactic + unique
+  x <- make.names(x, unique = TRUE)
+
+  # Light cleanup for readability
+  x <- str_replace_all(x, "\\.+", "_")
+  x <- str_replace_all(x, "^_|_$", "")
+  x
+}
+
+# -----------------------------
+# Helper: safely compute correlation matrix (returns NULL if insufficient numeric data)
+# -----------------------------
+safe_cor <- function(df_numeric, method = "pearson") {
+  if (is.null(df_numeric) || ncol(df_numeric) < 2) return(NULL)
+
+  df_num <- df_numeric %>%
+    mutate(across(everything(), as.numeric)) %>%
+    select(where(~ !all(is.na(.x))))
+
+  if (ncol(df_num) < 2) return(NULL)
+
+  tryCatch(
+    stats::cor(df_num, use = "pairwise.complete.obs", method = method),
+    error = function(e) NULL
+  )
+}
+```
+
+---
+
+## 2) Load data (robust Excel handling)
+
+This project uses an Excel export from DataWeb. Exported files can differ by:
+- sheet names
+- header row location
+- presence of “metadata” rows above the year-by-year table
+
+The loader below scans each sheet and finds the row that looks most like a year header (2010–2024 style).
+It then reads the table starting at that header row.
+
+```{r}
+candidate_files <- c(
+  "data/DataWeb-Query-Export_us_exports_total_2010_2024.xlsx",
+  "data/us_exports.xlsx",
+  "data/exports.xlsx",
+  "data/dataweb.xlsx"
+)
+
+file_used <- first_existing(candidate_files)
+file_used
+```
+
+```{r}
+# If no file exists, stop early but keep the notebook readable.
+if (is.na(file_used)) {
+  stop("No exports Excel file was found in /data. Add the DataWeb export and re-render.")
+}
+
+sheets <- readxl::excel_sheets(file_used)
+
+# Detect which row in a sheet is most likely the header row by counting "year-like" values
+detect_header_row <- function(path, sheet, max_preview_rows = 40) {
+  preview <- readxl::read_excel(
+    path,
+    sheet = sheet,
+    col_names = FALSE,
+    n_max = max_preview_rows
+  )
+
+  # Count how many year-like tokens appear in each row
+  year_counts <- map_int(seq_len(nrow(preview)), function(r) {
+    row_vals <- as.character(unlist(preview[r, ], use.names = FALSE))
+    row_vals <- str_trim(row_vals)
+    sum(str_detect(row_vals, "^(X)?(19|20)\\d{2}$"), na.rm = TRUE)
+  })
+
+  best_row <- which.max(year_counts)
+  # If nothing looks like a header, return NA
+  if (max(year_counts, na.rm = TRUE) == 0) return(NA_integer_)
+  best_row
+}
+
+sheet_audit <- tibble(
+  sheet = sheets,
+  header_row = map_int(sheets, ~ detect_header_row(file_used, .x)),
+  selected = header_row == max(header_row, na.rm = TRUE)
+)
+
+sheet_audit
+```
+
+```{r}
+# Choose the sheet with the earliest (highest confidence) detected header row.
+# (If multiple, pick the first.)
+chosen_sheet <- sheet_audit %>%
+  filter(!is.na(header_row)) %>%
+  arrange(header_row) %>%
+  slice(1) %>%
+  pull(sheet)
+
+chosen_sheet
+```
+
+```{r}
+# Read the chosen sheet starting at the detected header row.
+hdr_row <- sheet_audit %>% filter(sheet == chosen_sheet) %>% pull(header_row)
+
+raw_block <- readxl::read_excel(
+  file_used,
+  sheet = chosen_sheet,
+  skip = hdr_row - 1,
+  col_names = FALSE
+)
+
+# First row of this block contains the headers (possibly with blanks)
+header_vec <- as.character(unlist(raw_block[1, ], use.names = FALSE))
+names(raw_block) <- sanitize_names(header_vec)
+
+# Remove the header row from the data
+raw_tbl <- raw_block[-1, ] %>% as_tibble()
+
+glimpse(raw_tbl)
+```
+
+---
+
+## 3) Clean + tidy to long format
+
+Goal: build a consistent table with columns:
+
+- **Entity** (destination / partner / category)
+- **Year**
+- **Exports** (numeric)
+
+```{r}
+# Heuristic: the "Entity" column is the first non-year column.
+year_cols <- get_year_cols(names(raw_tbl))
+non_year_cols <- setdiff(names(raw_tbl), year_cols)
+
+entity_col <- non_year_cols[1]
+entity_col
+```
+
+```{r}
+# Build long table
+exports_long <- raw_tbl %>%
+  rename(Entity = all_of(entity_col)) %>%
+  mutate(Entity = as.character(Entity)) %>%
+  pivot_longer(
+    cols = all_of(year_cols),
+    names_to = "Year",
+    values_to = "Exports"
+  ) %>%
+  mutate(
+    Year = as.integer(str_remove(Year, "^X")),
+    Exports = as.numeric(Exports)
+  ) %>%
+  filter(!is.na(Entity), Entity != "", !is.na(Year))
+
+# Quick check
+exports_long %>% slice_head(n = 10)
+```
+
+---
+
+## 4) Trend view for top destinations
+
+To keep multivariate visuals readable, focus on the **top N entities** by total exports across all years.
+
+```{r}
+top_n <- 10
+
+top_entities <- exports_long %>%
+  group_by(Entity) %>%
+  summarize(total_exports = sum(Exports, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(total_exports)) %>%
+  slice_head(n = top_n) %>%
+  pull(Entity)
+
+top_entities
+```
+
+```{r}
+trend_df <- exports_long %>%
+  filter(Entity %in% top_entities, !is.na(Exports)) %>%
+  group_by(Entity, Year) %>%
+  summarize(Exports = sum(Exports, na.rm = TRUE), .groups = "drop")
+
+ggplot(trend_df, aes(x = Year, y = Exports, color = Entity)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "Top export destinations over time",
+    subtitle = paste0("Top ", top_n, " entities by total exports (all years combined)"),
+    x = "Year",
+    y = "Exports (as provided in DataWeb export)"
+  ) +
+  theme_minimal()
+```
+
+---
+
+## 5) Build a “wide” numeric dataset for correlations
+
+Wide format requirement:
+
+- rows = **Year**
+- columns = export series for each **Entity**
+- values = **Exports**
+
+```{r}
+wide_numeric <- exports_long %>%
+  filter(Entity %in% top_entities) %>%
+  group_by(Entity, Year) %>%
+  summarize(Exports = sum(Exports, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = Entity, values_from = Exports) %>%
+  arrange(Year)
+
+wide_numeric %>% slice_head(n = 5)
+```
+
+---
+
+## 6) Correlation matrix (multivariate)
+
+```{r}
+x_mat <- wide_numeric %>% select(-Year)
+corr_mat <- safe_cor(x_mat, method = "pearson")
+
+if (is.null(corr_mat)) {
+  stop("Correlation matrix could not be computed (not enough numeric data).")
+}
+
+corr_mat[1:min(5, nrow(corr_mat)), 1:min(5, ncol(corr_mat))]
+```
+
+---
+
+## 7) Visualize correlations
+
+### 7A) Heatmap (ggplot)
+
+```{r}
+corr_df <- as.data.frame(corr_mat) %>%
+  tibble::rownames_to_column("Var1") %>%
+  pivot_longer(-Var1, names_to = "Var2", values_to = "Correlation")
+
+ggplot(corr_df, aes(x = Var1, y = Var2, fill = Correlation)) +
+  geom_tile() +
+  geom_text(aes(label = sprintf("%.2f", Correlation)), size = 3) +
+  scale_fill_gradient2(limits = c(-1, 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    title = "Correlation heatmap (Pearson)",
+    subtitle = "Top export destinations — strength of co-movement across years",
+    x = NULL,
+    y = NULL
+  )
+```
+
+### 7B) corrplot (only if installed)
+
+```{r}
+if (use_pkg("corrplot")) {
+  corrplot::corrplot(
+    corr_mat,
+    method = "color",
+    type = "upper",
+    addCoef.col = "black",
+    tl.cex = 0.8,
+    number.cex = 0.7
+  )
+}
+```
+
+### 7C) Scatterplot matrix (optional; only if GGally installed)
+
+```{r}
+if (use_pkg("GGally")) {
+  # ggpairs can be heavy. Keep it small and numeric.
+  x_small <- x_mat
+  if (ncol(x_small) >= 2) {
+    GGally::ggpairs(x_small)
+  }
+}
+```
+
+---
+
+## 8) Interpretation (STAR: Scope + Action)
+
+### Scope
+
+The dataset summarizes U.S. exports over time, grouped by destination/partner (depending on the DataWeb export configuration).
+Multivariate correlation helps identify which destinations tend to increase/decrease together over the same years.
+
+### Action
+
+1. A time-series view identifies the most influential destinations (top N).
+2. A wide numeric dataset is created to compute Pearson correlations.
+3. The correlation matrix and heatmap reveal pairs (or clusters) of destinations with strong co-movement,
+   which can support hypotheses about shared economic forces (global demand cycles, commodity effects, shipping constraints, etc.).
+
+---
+
+## 9) Economy & Labor tie-in (implemented)
+
+A practical next step is to connect exports to a labor-market indicator.
+
+This section uses the built-in `ggplot2::economics` dataset (monthly U.S. macro series) to compute an **annual unemployment rate average**,
+then merges it with annual exports.
+
+This produces:
+- Correlation between total exports and unemployment
+- A simple regression model for interpretability
+
+```{r}
+# 9A) Compute annual unemployment rate (from ggplot2 economics dataset)
+labor_annual <- ggplot2::economics %>%
+  mutate(
+    Year = lubridate::year(date)
+  ) %>%
+  group_by(Year) %>%
+  summarize(
+    unemployment_avg = mean(unemploy, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+labor_annual %>% slice_head(n = 5)
+```
+
+```{r}
+# 9B) Compute annual total exports (sum across all entities for each year)
+exports_total_annual <- exports_long %>%
+  group_by(Year) %>%
+  summarize(
+    exports_total = sum(Exports, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+exports_total_annual %>% slice_head(n = 5)
+```
+
+```{r}
+# 9C) Merge and analyze
+econ_labor_df <- exports_total_annual %>%
+  inner_join(labor_annual, by = "Year") %>%
+  arrange(Year)
+
+econ_labor_df %>% slice_head(n = 10)
+```
+
+```{r}
+# 9D) Visualization: exports vs unemployment (annual)
+ggplot(econ_labor_df, aes(x = unemployment_avg, y = exports_total)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "Exports vs labor conditions (annual)",
+    subtitle = "Annual exports total vs annual average unemployment (from ggplot2::economics)",
+    x = "Annual average unemployment (count, economics dataset)",
+    y = "Annual total exports"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# 9E) Correlation + regression
+cor_val <- cor(econ_labor_df$exports_total, econ_labor_df$unemployment_avg, use = "complete.obs")
+cor_val
+```
+
+```{r}
+lm_fit <- lm(exports_total ~ unemployment_avg, data = econ_labor_df)
+summary(lm_fit)
+```
+
+### Interpretation
+
+- If the correlation is **negative**, higher unemployment years tend to align with lower export totals (consistent with weaker demand).
+- If the correlation is **positive**, the time window may include structural shifts (e.g., exports rising while unemployment rises) and should be checked alongside other macro indicators (GDP, industrial production, inflation).
+
+---
+
+## 10) Forward momentum for the project
+
+This week’s correlation structure provides a foundation for a predictive model.
+
+1. **Expand the labor linkage** using additional annual indicators (labor-force participation, CPI, GDP, JOLTS).
+2. Move from correlation to **multilinear regression**, using top destinations as predictors and a macro outcome as the response.
+3. Validate assumptions (collinearity, residual diagnostics) and compare model variants (AIC / adjusted R²).

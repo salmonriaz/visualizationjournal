@@ -1,5 +1,5 @@
 ---
-title: "Week 06 — (placeholder)"
+title: "Week 06 — DataWeb: U.S. Exports (2010–2024)"
 format:
   html:
     toc: true
@@ -9,6 +9,215 @@ execute:
   message: false
 ---
 
+<!--
+==============================================================
+FILE: week-06.qmd
+PROJECT: Visualization Journal (CSC 477 / GCSC 577)
+AUTHOR: Salmon Riaz
+VERSION: 1.0.2
+DATE: 2026-02-27
+CHANGE (v1.0.2): Fixed R regex parsing error by replacing \d escapes with [0-9] (safe in R strings).
+CHANGE (v1.0.1): Fixed R regex parsing error by replacing \s escapes with [[:space:]].
+==============================================================
 
+WHY THIS CHANGE?
+- R treats "\s" inside normal strings as an escape sequence and errors during parsing.
+- Using the POSIX whitespace class [[:space:]] avoids the issue and is portable.
 
-> Placeholder page. We’ll fill this in when we catch up to this week.
+NOTES
+- DataWeb exports sometimes have “header rows” a few lines down; this file tries to locate headers
+  defensively by searching for year-columns like 2010, 2011, etc.
+- If your DataWeb download changes the sheet name away from "FAS Value", update the sheet= value
+  below. The `excel_sheets()` calls help you confirm what’s in each workbook.
+-->
+
+## DataWeb exports dataset {#dataweb}
+
+This section uses two exports datasets downloaded from the U.S. International Trade Commission (USITC) DataWeb site:
+
+- **Total U.S. exports (all destinations)**, 2010–2024  
+- **U.S. exports by destination country**, 2010–2024  
+
+Both spreadsheets are stored in this repo under `data/` so the site can render the analysis reproducibly.
+
+::: {.callout-note}
+If your DataWeb download includes slightly different sheets/headers in the future, the cleaning steps below are written defensively (they search for the “2010…2024” year columns and build tidy data from them).
+:::
+
+## 1) Load packages
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+```
+
+## 2) Read the Excel files (all sheets)
+
+```{r}
+# File paths (relative to project root)
+f_total   <- "data/DataWeb-Query-Export_us_exports_total_2010_2024.xlsx"
+f_country <- "data/DataWeb-Query-Export_us_exports_by_country_2010_2024.xlsx"
+
+# Optional: list every sheet (helps satisfy the “look at all sheets” requirement)
+excel_sheets(f_total)
+excel_sheets(f_country)
+```
+
+## 3) Total exports (tidy to Year + Value)
+
+```{r}
+# The “FAS Value” sheet is the main data table in both downloads.
+# DataWeb often places the real header row a couple rows down.
+raw_total <- read_excel(f_total, sheet = "FAS Value", col_names = FALSE)
+
+# Find the header row by looking for the first row that contains a year like 2010
+header_row_total <- which(apply(raw_total, 1, function(r) any(str_detect(as.character(r), "^2010$"))))[1]
+header_row_total
+```
+
+```{r}
+# Build column names from that header row, then keep the data rows under it.
+colnames_total <- str_trim(as.character(unlist(raw_total[header_row_total, ])))
+colnames_total <- make.unique(colnames_total)
+total_df <- raw_total[(header_row_total + 1):nrow(raw_total), ]
+names(total_df) <- colnames_total
+
+# IMPORTANT FIX:
+# - Use POSIX whitespace class instead of "\s" to avoid R parse errors.
+year_col_pattern <- "^[[:space:]]*[0-9]{4}[[:space:]]*$"
+
+# Keep only the year columns and pivot longer
+total_tidy <- total_df |>
+  select(matches(year_col_pattern)) |>
+  slice(1) |>
+  pivot_longer(
+    cols = everything(),
+    names_to = "Year",
+    values_to = "Exports"
+  ) |>
+  mutate(
+    Year = as.integer(str_trim(Year)),
+    Exports = as.numeric(Exports)
+  ) |>
+  arrange(Year)
+
+glimpse(total_tidy)
+```
+
+## 4) Exports by country (tidy to Country + Year + Value)
+
+```{r}
+raw_country <- read_excel(f_country, sheet = "FAS Value", col_names = FALSE)
+
+# Find the header row by looking for the first row that contains "Country"
+header_row_country <- which(apply(raw_country, 1, function(r) any(str_detect(as.character(r), "^Country$"))))[1]
+header_row_country
+```
+
+```{r}
+colnames_country <- str_trim(as.character(unlist(raw_country[header_row_country, ])))
+colnames_country <- make.unique(colnames_country)
+country_df <- raw_country[(header_row_country + 1):nrow(raw_country), ]
+names(country_df) <- colnames_country
+
+# Reuse the same year column pattern
+year_col_pattern <- "^[[:space:]]*[0-9]{4}[[:space:]]*$"
+
+country_tidy <- country_df |>
+  filter(!is.na(Country)) |>
+  select(Country, matches(year_col_pattern)) |>
+  pivot_longer(
+    cols = -Country,
+    names_to = "Year",
+    values_to = "Exports"
+  ) |>
+  mutate(
+    Country = str_trim(as.character(Country)),
+    Year = as.integer(str_trim(Year)),
+    Exports = as.numeric(Exports)
+  ) |>
+  filter(!is.na(Exports)) |>
+  arrange(Country, Year)
+
+glimpse(country_tidy)
+```
+
+## 5) Visualizations
+
+### A. Total U.S. exports over time (line chart)
+
+```{r}
+ggplot(total_tidy, aes(x = Year, y = Exports)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.5) +
+  labs(
+    title = "Total U.S. Exports (FAS Value), 2010–2024",
+    subtitle = "Source: USITC DataWeb download",
+    x = "Year",
+    y = "Exports (FAS Value, reported units from DataWeb download)"
+  ) +
+  theme_minimal()
+```
+
+### B. Top 10 export destinations in 2024 (bar chart)
+
+```{r}
+top_2024 <- country_tidy |>
+  filter(Year == 2024) |>
+  group_by(Country) |>
+  summarise(Exports = sum(Exports, na.rm = TRUE), .groups = "drop") |>
+  arrange(desc(Exports)) |>
+  slice_head(n = 10)
+
+top_2024
+```
+
+```{r}
+ggplot(top_2024, aes(x = reorder(Country, Exports), y = Exports)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top 10 U.S. Export Destinations (2024)",
+    subtitle = "FAS Value from USITC DataWeb download",
+    x = "",
+    y = "Exports (FAS Value, reported units from DataWeb download)"
+  ) +
+  theme_minimal()
+```
+
+### C. Share of top destinations vs the world (2024)
+
+```{r}
+total_2024 <- total_tidy |>
+  filter(Year == 2024) |>
+  pull(Exports) |>
+  as.numeric()
+
+share_2024 <- top_2024 |>
+  mutate(Share = Exports / total_2024) |>
+  arrange(desc(Share))
+
+share_2024
+```
+
+```{r}
+ggplot(share_2024, aes(x = reorder(Country, Share), y = Share)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Share of Total U.S. Exports (2024): Top 10 Destinations",
+    subtitle = "Shares computed using Total Exports (all destinations) from the companion DataWeb download",
+    x = "",
+    y = "Share of total exports"
+  ) +
+  theme_minimal()
+```
+
+## Quick interpretation (STAR: Scope + Action)
+
+- **Scope (context):** This is annual U.S. export value (FAS Value) from DataWeb, covering 2010–2024.  
+- **Action (what we did):** We pulled the total series and the country breakdown into tidy tables, then visualized trends over time and the top destinations in the most recent full year.
